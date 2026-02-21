@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_mind_map/adapter/i_node_adapter.dart';
 import 'package:flutter_mind_map/base64_image_validator.dart';
@@ -5180,7 +5181,8 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
         }
       },
       child:
-          ((Platform.isAndroid || Platform.isIOS) &&
+          ((defaultTargetPlatform == TargetPlatform.android ||
+                      defaultTargetPlatform == TargetPlatform.iOS) &&
                   widget.node.getSelected() == false &&
                   !(widget.node.getMindMap()?.hasTextField() ?? false)) ||
               widget.node.getParentNode() == null ||
@@ -5204,9 +5206,9 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
               ),
               child:
                   widget.node.getNodeType() == NodeType.root ||
-                      Platform.isMacOS ||
-                      Platform.isLinux ||
-                      Platform.isWindows ||
+                      defaultTargetPlatform == TargetPlatform.macOS ||
+                      defaultTargetPlatform == TargetPlatform.linux ||
+                      defaultTargetPlatform == TargetPlatform.windows ||
                       widget.node.getSelected() == false
                   ? getBody(border)
                   : Stack(
