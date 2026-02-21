@@ -598,6 +598,7 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
     }
     getMindMap()?.refresh();
     if (!_isLoading) {
+      getMindMap()?.onNodeAdded(node);
       getMindMap()?.onChanged();
     }
   }
@@ -610,6 +611,7 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
     addRightItem(node);
     getMindMap()?.refresh();
     if (!_isLoading) {
+      getMindMap()?.onNodeAdded(node);
       getMindMap()?.onChanged();
     }
   }
