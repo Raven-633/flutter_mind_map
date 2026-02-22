@@ -278,6 +278,9 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
     if (_linkOutPadding != null && _linkOutPadding != 0) {
       properties["LinkOutPadding"] = _linkOutPadding;
     }
+    if (_metadata.isNotEmpty) {
+      properties["Metadata"] = _metadata;
+    }
     List<Map<String, dynamic>> leftNodes = [];
     for (IMindMapNode node in _leftItems) {
       leftNodes.add(node.toJson());
@@ -350,6 +353,11 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
         }
         if (proJson.containsKey("Extended")) {
           setExtended(proJson["Extended"].toString());
+        }
+        if (proJson.containsKey("Metadata")) {
+          if (proJson["Metadata"] is Map<String, dynamic>) {
+            setMetadata(proJson["Metadata"] as Map<String, dynamic>);
+          }
         }
 
         if (proJson.containsKey("Expanded")) {
@@ -1288,6 +1296,28 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
   /// set child
   void setChild(Widget? value) {
     _child = value;
+  }
+
+  Map<String, dynamic> _metadata = {};
+
+  /// Metadata
+  Map<String, dynamic> getMetadata() {
+    return _metadata;
+  }
+
+  void addMetadata(String key, dynamic val) {
+    _metadata[key] = val;
+    if (!_isLoading) {
+      getMindMap()?.onChanged();
+    }
+  }
+
+  /// Set metadata
+  void setMetadata(Map<String, dynamic> value) {
+    _metadata = value;
+    if (!_isLoading) {
+      getMindMap()?.onChanged();
+    }
   }
 
   Color? _backgroundColor;
