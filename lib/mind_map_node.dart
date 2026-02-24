@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_mind_map/adapter/i_node_adapter.dart';
 import 'package:flutter_mind_map/base64_image_validator.dart';
@@ -277,6 +278,9 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
     if (_linkOutPadding != null && _linkOutPadding != 0) {
       properties["LinkOutPadding"] = _linkOutPadding;
     }
+    if (_metadata.isNotEmpty) {
+      properties["Metadata"] = _metadata;
+    }
     List<Map<String, dynamic>> leftNodes = [];
     for (IMindMapNode node in _leftItems) {
       leftNodes.add(node.toJson());
@@ -349,6 +353,11 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
         }
         if (proJson.containsKey("Extended")) {
           setExtended(proJson["Extended"].toString());
+        }
+        if (proJson.containsKey("Metadata")) {
+          if (proJson["Metadata"] is Map<String, dynamic>) {
+            setMetadata(proJson["Metadata"] as Map<String, dynamic>);
+          }
         }
 
         if (proJson.containsKey("Expanded")) {
@@ -598,6 +607,7 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
     }
     getMindMap()?.refresh();
     if (!_isLoading) {
+      getMindMap()?.onNodeAdded(node);
       getMindMap()?.onChanged();
     }
   }
@@ -610,6 +620,7 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
     addRightItem(node);
     getMindMap()?.refresh();
     if (!_isLoading) {
+      getMindMap()?.onNodeAdded(node);
       getMindMap()?.onChanged();
     }
   }
@@ -1285,6 +1296,28 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
   /// set child
   void setChild(Widget? value) {
     _child = value;
+  }
+
+  Map<String, dynamic> _metadata = {};
+
+  /// Metadata
+  Map<String, dynamic> getMetadata() {
+    return _metadata;
+  }
+
+  void addMetadata(String key, dynamic val) {
+    _metadata[key] = val;
+    if (!_isLoading) {
+      getMindMap()?.onChanged();
+    }
+  }
+
+  /// Set metadata
+  void setMetadata(Map<String, dynamic> value) {
+    _metadata = value;
+    if (!_isLoading) {
+      getMindMap()?.onChanged();
+    }
   }
 
   Color? _backgroundColor;
@@ -5178,7 +5211,8 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
         }
       },
       child:
-          ((Platform.isAndroid || Platform.isIOS) &&
+          ((defaultTargetPlatform == TargetPlatform.android ||
+                      defaultTargetPlatform == TargetPlatform.iOS) &&
                   widget.node.getSelected() == false &&
                   !(widget.node.getMindMap()?.hasTextField() ?? false)) ||
               widget.node.getParentNode() == null ||
@@ -5202,9 +5236,9 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
               ),
               child:
                   widget.node.getNodeType() == NodeType.root ||
-                      Platform.isMacOS ||
-                      Platform.isLinux ||
-                      Platform.isWindows ||
+                      defaultTargetPlatform == TargetPlatform.macOS ||
+                      defaultTargetPlatform == TargetPlatform.linux ||
+                      defaultTargetPlatform == TargetPlatform.windows ||
                       widget.node.getSelected() == false
                   ? getBody(border)
                   : Stack(

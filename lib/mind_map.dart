@@ -855,6 +855,27 @@ class MindMap extends StatefulWidget {
     }
   }
 
+  final List<Function(IMindMapNode)> _onNodeAddedListeners = [];
+
+  ///Add On Node Added Listeners
+  void addOnNodeAddedListeners(Function(IMindMapNode) value) {
+    _onNodeAddedListeners.add(value);
+  }
+
+  ///Remove On Node Added Listeners
+  void removeOnNodeAddedListeners(Function(IMindMapNode) value) {
+    _onNodeAddedListeners.remove(value);
+  }
+
+  ///On Node Added
+  void onNodeAdded(IMindMapNode node) {
+    List<Function(IMindMapNode)> list = [];
+    list.addAll(_onNodeAddedListeners);
+    for (Function(IMindMapNode) call in list) {
+      call(node);
+    }
+  }
+
   final List<Function(IMindMapNode)> _onEditListeners = [];
 
   ///Add On Edit Listeners
