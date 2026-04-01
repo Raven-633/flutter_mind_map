@@ -20,6 +20,7 @@ import 'package:flutter_mind_map/theme/json_theme.dart';
 import 'package:flutter_mind_map/theme/mind_map_theme_compact.dart';
 import 'package:flutter_mind_map/theme/mind_map_theme_large.dart';
 import 'package:flutter_mind_map/theme/mind_map_theme_normal.dart';
+import 'package:flutter_mind_map/cross_link/cross_link_info.dart';
 import 'package:path_drawing/path_drawing.dart';
 
 // ignore: must_be_immutable
@@ -338,18 +339,48 @@ class MindMap extends StatefulWidget {
 
   ///Load Data from Json
   void loadData(Map<String, dynamic> json) {
-    if (json.containsKey("id") &&
+    _rootNodes.clear();
+    _rootNodeCanvasOffsets.clear();
+    _crossLinks.clear();
+    if (json.containsKey("roots")) {
+      for (Map<String, dynamic> r in (json["roots"] as List)) {
+        MindMapNode node = MindMapNode();
+        double cx = (r["canvasX"] as num?)?.toDouble() ?? 0;
+        double cy = (r["canvasY"] as num?)?.toDouble() ?? 0;
+        // Load data first so node.getID() returns the domain ID (not the
+        // auto-generated UUID), ensuring _rootNodeCanvasOffsets is keyed
+        // correctly and getRootNodeCanvasOffset() can find the offset later.
+        node.loadData(r);
+        addRootNode(node, canvasOffset: Offset(cx, cy));
+      }
+    } else if (json.containsKey("id") &&
         json.containsKey("content") &&
         json.containsKey("nodes")) {
+      // Legacy single-root format
       MindMapNode rootNode = MindMapNode();
-      setRootNode(rootNode);
+      addRootNode(rootNode, canvasOffset: Offset.zero);
       rootNode.loadData(json);
+    }
+    if (json.containsKey("crossLinks")) {
+      for (Map<String, dynamic> linkJson in (json["crossLinks"] as List)) {
+        _crossLinks.add(CrossLinkInfo.fromJson(linkJson));
+      }
     }
   }
 
   ///Export Data to Json
   Map<String, dynamic> getData() {
-    return getRootNode().getData();
+    return {
+      "roots": getRootNodes().map((n) {
+        Offset off = getRootNodeCanvasOffset(n);
+        return {
+          "canvasX": off.dx,
+          "canvasY": off.dy,
+          ...n.getData(),
+        };
+      }).toList(),
+      "crossLinks": _crossLinks.map((l) => l.toJson()).toList(),
+    };
   }
 
   ///Export Data&Style to Json
@@ -358,7 +389,15 @@ class MindMap extends StatefulWidget {
       "MapType": getMapType().name,
       "MindMapType": getMindMapType().name,
       "FishboneMapType": getFishboneMapType().name,
-      "RootNode": getRootNode().toJson(),
+      "RootNodes": getRootNodes().map((node) {
+        Offset off = getRootNodeCanvasOffset(node);
+        return {
+          "canvasX": off.dx.toString(),
+          "canvasY": off.dy.toString(),
+          node.runtimeType.toString(): node.toJson(),
+        };
+      }).toList(),
+      "CrossLinks": _crossLinks.map((l) => l.toJson()).toList(),
       "Zoom": getZoom().toString(),
       "ExpandedLevel": getExpandedLevel(),
       "BackgroundColor": colorToString(getBackgroundColor()),
@@ -431,14 +470,35 @@ class MindMap extends StatefulWidget {
         }
       }
     }
-    if (json.containsKey("RootNode")) {
+    _rootNodes.clear();
+    _rootNodeCanvasOffsets.clear();
+    _crossLinks.clear();
+    if (json.containsKey("RootNodes")) {
+      List<dynamic> rootsJson = json["RootNodes"] as List;
+      for (Map<String, dynamic> rootJson in rootsJson) {
+        double cx = double.tryParse(rootJson["canvasX"]?.toString() ?? "0") ?? 0;
+        double cy = double.tryParse(rootJson["canvasY"]?.toString() ?? "0") ?? 0;
+        String nodeKey = rootJson.keys.firstWhere(
+            (k) => k != "canvasX" && k != "canvasY");
+        IMindMapNode? node = createNode(nodeKey);
+        if (node != null) {
+          node.fromJson(rootJson[nodeKey] as Map<String, dynamic>);
+          addRootNode(node, canvasOffset: Offset(cx, cy));
+        }
+      }
+    } else if (json.containsKey("RootNode")) {
       Map<String, dynamic> map = json["RootNode"];
       if (map.isNotEmpty) {
         IMindMapNode? node = createNode(map.keys.first);
         if (node != null) {
-          setRootNode(node);
+          addRootNode(node, canvasOffset: Offset.zero);
           node.fromJson(map);
         }
+      }
+    }
+    if (json.containsKey("CrossLinks")) {
+      for (Map<String, dynamic> linkJson in (json["CrossLinks"] as List)) {
+        _crossLinks.add(CrossLinkInfo.fromJson(linkJson));
       }
     }
     _isLoading = false;
@@ -664,6 +724,19 @@ class MindMap extends StatefulWidget {
     }
   }
 
+  bool _canMoveRootNodes = true;
+
+  /// Whether individual root nodes can be dragged within the multi-root canvas.
+  bool getCanMoveRootNodes() => _canMoveRootNodes;
+
+  /// Set whether individual root nodes can be dragged.
+  void setCanMoveRootNodes(bool value) {
+    if (_canMoveRootNodes != value) {
+      _canMoveRootNodes = value;
+      _state?.refresh();
+    }
+  }
+
   bool _showZoom = true;
 
   ///Show Zoom
@@ -682,6 +755,17 @@ class MindMap extends StatefulWidget {
   ///refresh MindMap
   void refresh() {
     _state?.refresh();
+  }
+
+  /// 在导图区域本地坐标 [local] 处按滚轮纵向增量 [scrollDeltaDy] 缩放。
+  /// 兼容外层调用；当前实现复用现有缩放体系。
+  void applyWheelZoomAtLocal(Offset local, double scrollDeltaDy) {
+    _state?.applyWheelZoomAtLocal(local, scrollDeltaDy);
+  }
+
+  /// 使用全局坐标 [globalPosition] 作为滚轮缩放锚点。
+  void applyWheelZoomAtGlobal(Offset globalPosition, double scrollDeltaDy) {
+    _state?.applyWheelZoomAtGlobal(globalPosition, scrollDeltaDy);
   }
 
   double _zoom = 1;
@@ -746,7 +830,9 @@ class MindMap extends StatefulWidget {
 
   ///Set Theme
   void setTheme(IMindMapTheme? value) {
-    getRootNode().clearStyle();
+    for (IMindMapNode root in getRootNodes()) {
+      root.clearStyle();
+    }
     _theme = value;
     if (_theme != null) {
       if (_theme!.getThemeByLevel(0)!.containsKey("Image")) {
@@ -764,7 +850,9 @@ class MindMap extends StatefulWidget {
         }
       }
     }
-    getRootNode().refresh();
+    for (IMindMapNode root in getRootNodes()) {
+      root.refresh();
+    }
     refresh();
     onChanged();
   }
@@ -955,22 +1043,117 @@ class MindMap extends StatefulWidget {
     onChanged();
   }
 
-  IMindMapNode _rootNode = MindMapNode();
+  final List<IMindMapNode> _rootNodes = [];
+  final Map<String, Offset> _rootNodeCanvasOffsets = {};
+  final List<CrossLinkInfo> _crossLinks = [];
 
-  ///Root Node
+  ///Root Node (compatibility: returns first root node, creating one if empty)
   IMindMapNode getRootNode() {
-    if (_rootNode.getMindMap() == null) {
-      _rootNode.setMindMap(this);
+    if (_rootNodes.isEmpty) {
+      // 同步完成数据结构，但 [addRootNode] 会触发 onRootNodeChanged → setState。
+      // 若在 build（例如 DragTarget.builder）期间调用 getRootNode，会触发构建期 setState。
+      // 将通知推迟到本帧布局完成之后。
+      MindMapNode node = MindMapNode();
+      _rootNodes.add(node);
+      node.setNodeType(NodeType.root);
+      node.setMindMap(this);
+      _rootNodeCanvasOffsets[node.getID()] = Offset.zero;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        onRootNodeChanged();
+        onChanged();
+      });
     }
-    return _rootNode;
+    return _rootNodes.first;
   }
 
-  ///Set Root Node
+  ///Set Root Node (compatibility: replaces first root node)
   void setRootNode(IMindMapNode rootNode) {
-    _rootNode = rootNode;
-    _rootNode.setNodeType(NodeType.root);
-    _rootNode.setMindMap(this);
+    if (_rootNodes.isEmpty) {
+      addRootNode(rootNode, canvasOffset: Offset.zero);
+    } else {
+      _rootNodes[0] = rootNode;
+      rootNode.setNodeType(NodeType.root);
+      rootNode.setMindMap(this);
+      _rootNodeCanvasOffsets[rootNode.getID()] = Offset.zero;
+    }
     onRootNodeChanged();
+  }
+
+  ///Get all root nodes
+  List<IMindMapNode> getRootNodes() => List.unmodifiable(_rootNodes);
+
+  ///Add a root node at the given canvas offset
+  void addRootNode(IMindMapNode node, {Offset canvasOffset = Offset.zero}) {
+    _rootNodes.add(node);
+    node.setNodeType(NodeType.root);
+    node.setMindMap(this);
+    _rootNodeCanvasOffsets[node.getID()] = canvasOffset;
+    onRootNodeChanged();
+    onChanged();
+  }
+
+  ///Remove a root node (and its subtree)
+  void removeRootNode(IMindMapNode node) {
+    _rootNodes.remove(node);
+    _rootNodeCanvasOffsets.remove(node.getID());
+    // Clean up cross links referencing nodes in the removed subtree
+    Set<String> removedIds = {};
+    _collectNodeIds(node, removedIds);
+    _crossLinks.removeWhere(
+      (l) => removedIds.contains(l.fromNodeId) || removedIds.contains(l.toNodeId),
+    );
+    onRootNodeChanged();
+    onChanged();
+  }
+
+  void _collectNodeIds(IMindMapNode node, Set<String> ids) {
+    ids.add(node.getID());
+    for (IMindMapNode child in [...node.getLeftItems(), ...node.getRightItems()]) {
+      _collectNodeIds(child, ids);
+    }
+  }
+
+  ///Get canvas offset for a root node
+  Offset getRootNodeCanvasOffset(IMindMapNode node) =>
+      _rootNodeCanvasOffsets[node.getID()] ?? Offset.zero;
+
+  ///Set canvas offset for a root node (called during drag)
+  void setRootNodeCanvasOffset(IMindMapNode node, Offset offset) {
+    _rootNodeCanvasOffsets[node.getID()] = offset;
+    onChanged();
+  }
+
+  ///CrossLink management
+  List<CrossLinkInfo> getCrossLinks() => List.unmodifiable(_crossLinks);
+
+  void addCrossLink(CrossLinkInfo link) {
+    _crossLinks.add(link);
+    refresh();
+    onChanged();
+  }
+
+  void removeCrossLink(String linkId) {
+    _crossLinks.removeWhere((l) => l.id == linkId);
+    refresh();
+    onChanged();
+  }
+
+  ///Find a node by ID across all root trees
+  IMindMapNode? findNodeById(String id) {
+    for (IMindMapNode root in _rootNodes) {
+      IMindMapNode? result = _findInTree(root, id);
+      if (result != null) return result;
+    }
+    return null;
+  }
+
+  IMindMapNode? _findInTree(IMindMapNode node, String id) {
+    if (node.getID() == id) return node;
+    for (IMindMapNode child in [...node.getLeftItems(), ...node.getRightItems()]) {
+      IMindMapNode? r = _findInTree(child, id);
+      if (r != null) return r;
+    }
+    return null;
   }
 
   final List<Function()> _onRootNodeChangeListeners = [];
@@ -1108,6 +1291,24 @@ class MindMapState extends State<MindMap> {
   double _oldzoom = 1.0;
 
   final GlobalKey _pkey = GlobalKey();
+  final GlobalKey _mapStackKey = GlobalKey();
+
+  void applyWheelZoomAtGlobal(Offset globalPosition, double scrollDeltaDy) {
+    final box = _mapStackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    applyWheelZoomAtLocal(box.globalToLocal(globalPosition), scrollDeltaDy);
+  }
+
+  void applyWheelZoomAtLocal(Offset local, double scrollDeltaDy) {
+    if (!widget.getCanMove() || scrollDeltaDy == 0) return;
+    final oldZoom = widget.getZoom();
+    final newZoom = (oldZoom - scrollDeltaDy * 0.002).clamp(0.1, 2.0);
+    if ((newZoom - oldZoom).abs() < 1e-9) return;
+    setState(() {
+      widget.setZoom(newZoom);
+    });
+    widget.onChanged();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1314,6 +1515,7 @@ class MindMapState extends State<MindMap> {
           key: _pkey,
           builder: (context, candidateData, rejectedData) {
             return Container(
+              key: _mapStackKey,
               color: widget.getBackgroundColor(),
               width: double.infinity,
               height: double.infinity,
@@ -1345,7 +1547,16 @@ class MindMapState extends State<MindMap> {
                                           widget.getZoom()
                                     : 0,
                               ),
-                              child: widget.getRootNode() as Widget,
+                              child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: widget.getRootNodes().map((rootNode) {
+                                        return _DraggableRootNode(
+                                          key: ValueKey('drag_root_${rootNode.getID()}'),
+                                          rootNode: rootNode,
+                                          mindMap: widget,
+                                        );
+                                      }).toList(),
+                                    ),
                             ),
                           ),
                         ),
@@ -1355,60 +1566,82 @@ class MindMapState extends State<MindMap> {
 
                   widget.getWatermark().isEmpty
                       ? Container()
-                      : Row(
-                          children: List.generate(20, (index) {
-                            return Column(
-                              children: List.generate(20, (index) => "Item $index")
-                                  .map(
-                                    (item) => Column(
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.start,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Transform.rotate(
-                                              angle: widget
-                                                  .getWatermarkRotationAngle(),
-                                              child: Opacity(
-                                                opacity: widget
-                                                    .getWatermarkOpacity(),
-                                                child: Text(
-                                                  widget.getWatermark(),
-                                                  style: TextStyle(
-                                                    color: widget
-                                                        .getWatermarkColor(),
-                                                    fontSize: widget
-                                                        .getWatermarkFontSize(),
-                                                    shadows: [
-                                                      Shadow(
-                                                        color: Colors.white,
-                                                        offset: Offset.zero,
-                                                        blurRadius: 3,
+                      : Positioned.fill(
+                          child: IgnorePointer(
+                            child: ClipRect(
+                              child: SingleChildScrollView(
+                                physics: const NeverScrollableScrollPhysics(),
+                                scrollDirection: Axis.horizontal,
+                                child: SingleChildScrollView(
+                                  physics:
+                                      const NeverScrollableScrollPhysics(),
+                                  child: Row(
+                                    children: List.generate(20, (index) {
+                                      return Column(
+                                        children:
+                                            List.generate(20, (index) => "Item $index")
+                                                .map(
+                                                  (item) => Column(
+                                                    children: [
+                                                      Row(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .start,
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          Transform.rotate(
+                                                            angle: widget
+                                                                .getWatermarkRotationAngle(),
+                                                            child: Opacity(
+                                                              opacity: widget
+                                                                  .getWatermarkOpacity(),
+                                                              child: Text(
+                                                                widget
+                                                                    .getWatermark(),
+                                                                style: TextStyle(
+                                                                  color: widget
+                                                                      .getWatermarkColor(),
+                                                                  fontSize: widget
+                                                                      .getWatermarkFontSize(),
+                                                                  shadows: [
+                                                                    Shadow(
+                                                                      color: Colors
+                                                                          .white,
+                                                                      offset: Offset
+                                                                          .zero,
+                                                                      blurRadius:
+                                                                          3,
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          SizedBox(
+                                                            width: widget
+                                                                .getWatermarkHorizontalInterval(),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      SizedBox(
+                                                        height: widget
+                                                            .getWatermarkVerticalInterval(),
                                                       ),
                                                     ],
                                                   ),
-                                                ),
-                                              ),
-                                            ),
-                                            SizedBox(
-                                              width: widget
-                                                  .getWatermarkHorizontalInterval(),
-                                            ),
-                                          ],
-                                        ),
-                                        SizedBox(
-                                          height: widget
-                                              .getWatermarkVerticalInterval(),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                  .toList(),
-                            );
-                          }),
+                                                )
+                                                .toList(),
+                                      );
+                                    }),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
 
                   Container(
@@ -1445,22 +1678,55 @@ class MindMapState extends State<MindMap> {
                                 onAcceptWithDetails: (details) {
                                   if (!widget.getIsScaling() &&
                                       widget._dragNode != null) {
-                                    setState(() {
-                                      if (widget._dragNode!.getNodeType() ==
-                                          NodeType.left) {
-                                        widget._dragNode!
-                                            .getParentNode()
-                                            ?.removeLeftItem(widget._dragNode!);
-                                      } else {
-                                        widget._dragNode!
-                                            .getParentNode()
-                                            ?.removeRightItem(
-                                              widget._dragNode!,
-                                            );
-                                      }
-                                      widget._inRecycle = false;
-                                      widget._dragNode = null;
-                                    });
+                                    if (widget._dragNode!.getNodeType() ==
+                                        NodeType.root) {
+                                      showDialog(
+                                        context: context,
+                                        builder: (_) => AlertDialog(
+                                          content: Text(
+                                              widget.getDeleteNodeString()),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(context),
+                                              child: Text(
+                                                  widget.getCancelString()),
+                                            ),
+                                            TextButton(
+                                              onPressed: () {
+                                                widget.removeRootNode(
+                                                    widget._dragNode!);
+                                                setState(() {
+                                                  widget._inRecycle = false;
+                                                  widget._dragNode = null;
+                                                });
+                                                Navigator.pop(context);
+                                              },
+                                              child:
+                                                  Text(widget.getOkString()),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    } else {
+                                      setState(() {
+                                        if (widget._dragNode!.getNodeType() ==
+                                            NodeType.left) {
+                                          widget._dragNode!
+                                              .getParentNode()
+                                              ?.removeLeftItem(
+                                                  widget._dragNode!);
+                                        } else {
+                                          widget._dragNode!
+                                              .getParentNode()
+                                              ?.removeRightItem(
+                                                widget._dragNode!,
+                                              );
+                                        }
+                                        widget._inRecycle = false;
+                                        widget._dragNode = null;
+                                      });
+                                    }
                                   }
                                 },
                                 onLeave: (data) {
@@ -1689,7 +1955,9 @@ class MindMapState extends State<MindMap> {
                             _dragIndex,
                           );
                         }
-                        widget.getRootNode().refresh();
+                        for (IMindMapNode root in widget.getRootNodes()) {
+                          root.refresh();
+                        }
                         widget.onChanged();
                       }
                       widget.refresh();
@@ -1780,7 +2048,11 @@ class MindMapState extends State<MindMap> {
   }
 
   IMindMapNode? inLeftDrag(IMindMapNode node, Offset offset) {
-    return inLeftDragByParentNode(node, offset, widget.getRootNode());
+    for (IMindMapNode root in widget.getRootNodes()) {
+      IMindMapNode? result = inLeftDragByParentNode(node, offset, root);
+      if (result != null) return result;
+    }
+    return null;
   }
 
   int _dragIndex = 0;
@@ -1849,7 +2121,11 @@ class MindMapState extends State<MindMap> {
   }
 
   IMindMapNode? inRightDrag(IMindMapNode node, Offset offset) {
-    return inRightDragByParentNode(node, offset, widget.getRootNode());
+    for (IMindMapNode root in widget.getRootNodes()) {
+      IMindMapNode? result = inRightDragByParentNode(node, offset, root);
+      if (result != null) return result;
+    }
+    return null;
   }
 
   IMindMapNode? inRightDragByParentNode(
@@ -1929,8 +2205,10 @@ class MindMapState extends State<MindMap> {
   void refresh() {
     if (mounted) {
       setState(() {
-        widget.getRootNode().setOffset(null);
-        widget.getRootNode().setSize(null);
+        for (IMindMapNode root in widget.getRootNodes()) {
+          root.setOffset(null);
+          root.setSize(null);
+        }
       });
     }
   }
@@ -2487,3 +2765,93 @@ enum MapType { mind, fishbone }
 enum MindMapType { left, leftAndRight, right }
 
 enum FishboneMapType { leftToRight, rightToLeft }
+
+/// Wraps a root node in the multi-root [Stack] so it can be panned independently.
+/// A single-finger drag on the node moves only that root node; the outer canvas
+/// pan gesture is blocked by absorbing the pointer event.
+class _DraggableRootNode extends StatefulWidget {
+  const _DraggableRootNode({
+    super.key,
+    required this.rootNode,
+    required this.mindMap,
+  });
+
+  final IMindMapNode rootNode;
+  final MindMap mindMap;
+
+  @override
+  State<_DraggableRootNode> createState() => _DraggableRootNodeState();
+}
+
+class _DraggableRootNodeState extends State<_DraggableRootNode> {
+  /// Visual offset during drag; synced from mindMap on non-drag rebuilds.
+  late Offset _visualOffset;
+  Offset _startCanvasOffset = Offset.zero;
+  Offset _startFocalPoint = Offset.zero;
+  bool _dragging = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _visualOffset = widget.mindMap.getRootNodeCanvasOffset(widget.rootNode);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DraggableRootNode oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // When not dragging, keep visual offset in sync with external changes
+    // (e.g. loadData resets positions).
+    if (!_dragging) {
+      _visualOffset = widget.mindMap.getRootNodeCanvasOffset(widget.rootNode);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canMove = widget.mindMap.getCanMoveRootNodes();
+    return Transform.translate(
+      offset: _visualOffset,
+      child: GestureDetector(
+        behavior: HitTestBehavior.deferToChild,
+        onPanStart: canMove
+            ? (details) {
+                _dragging = true;
+                _startFocalPoint = details.globalPosition;
+                _startCanvasOffset =
+                    widget.mindMap.getRootNodeCanvasOffset(widget.rootNode);
+              }
+            : null,
+        onPanUpdate: canMove
+            ? (details) {
+                if (!_dragging) return;
+                final zoom = widget.mindMap.getZoom();
+                final delta =
+                    (details.globalPosition - _startFocalPoint) / zoom;
+                setState(() {
+                  _visualOffset = _startCanvasOffset + delta;
+                });
+              }
+            : null,
+        onPanEnd: canMove
+            ? (_) {
+                _dragging = false;
+                // Persist final position (triggers onChanged for external listeners).
+                widget.mindMap
+                    .setRootNodeCanvasOffset(widget.rootNode, _visualOffset);
+              }
+            : null,
+        onPanCancel: canMove
+            ? () {
+                // Revert to last persisted position on cancel.
+                setState(() {
+                  _dragging = false;
+                  _visualOffset =
+                      widget.mindMap.getRootNodeCanvasOffset(widget.rootNode);
+                });
+              }
+            : null,
+        child: widget.rootNode as Widget,
+      ),
+    );
+  }
+}
