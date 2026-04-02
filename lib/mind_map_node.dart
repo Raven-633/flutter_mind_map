@@ -5124,7 +5124,9 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
     super.initState();
     widget.node.getMindMap()?.addOnZoomChangedListeners(onZoomChanged);
     widget.node.getMindMap()?.addOnChangedListeners(onChanged);
-    widget.node.getMindMap()?.addOnSelectedNodeChangedListeners(onSelectedNodeChanged);
+    widget.node.getMindMap()?.addOnSelectedNodeChangedListeners(
+      onSelectedNodeChanged,
+    );
     _editingController.text = widget.node.getTitle();
   }
 
@@ -5133,7 +5135,9 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
   void dispose() {
     widget.node.getMindMap()?.removeOnChangedListeners(onChanged);
     widget.node.getMindMap()?.removeOnZoomChangedListeners(onZoomChanged);
-    widget.node.getMindMap()?.removeOnSelectedNodeChangedListeners(onSelectedNodeChanged);
+    widget.node.getMindMap()?.removeOnSelectedNodeChangedListeners(
+      onSelectedNodeChanged,
+    );
     super.dispose();
   }
 
