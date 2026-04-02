@@ -2339,8 +2339,13 @@ class MindMapNodeState extends State<MindMapNode> {
     widget._state = this;
 
     ///Set Map Size
+    // Only update the map size in single-root mode.  In multi-root mode each
+    // root node would overwrite the previous value with its own tree size,
+    // producing a meaningless result that breaks the canvas-centering logic.
+    final _rootCount = widget.getMindMap()?.getRootNodes().length ?? 0;
     if (widget.getParentNode() == null &&
-        (!widget.getSelected() || !widget._focusNode.hasFocus)) {
+        (!widget.getSelected() || !widget._focusNode.hasFocus) &&
+        _rootCount <= 1) {
       WidgetsBinding.instance.addPostFrameCallback((c) {
         if (mounted && !widget.getSelected()) {
           RenderObject? ro = context.findRenderObject();
@@ -5119,6 +5124,7 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
     super.initState();
     widget.node.getMindMap()?.addOnZoomChangedListeners(onZoomChanged);
     widget.node.getMindMap()?.addOnChangedListeners(onChanged);
+    widget.node.getMindMap()?.addOnSelectedNodeChangedListeners(onSelectedNodeChanged);
     _editingController.text = widget.node.getTitle();
   }
 
@@ -5127,6 +5133,7 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
   void dispose() {
     widget.node.getMindMap()?.removeOnChangedListeners(onChanged);
     widget.node.getMindMap()?.removeOnZoomChangedListeners(onZoomChanged);
+    widget.node.getMindMap()?.removeOnSelectedNodeChangedListeners(onSelectedNodeChanged);
     super.dispose();
   }
 
@@ -5137,6 +5144,12 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
   }
 
   void onZoomChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void onSelectedNodeChanged() {
     if (mounted) {
       setState(() {});
     }
@@ -5186,6 +5199,7 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
       );
     }
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTapDown: (details) {
         widget.node._doubleTapForTextField = false;
         widget.node.setDragOfset(details.localPosition);
@@ -5193,12 +5207,18 @@ class MindMapNodeTitleState extends State<MindMapNodeTitle> {
       onTap: () {
         widget.node._doubleTapForTextField = false;
         widget.node.getMindMap()?.setSelectedNode(widget.node);
+        debugPrint(
+          "[mind_map_node] onTap node=${widget.node.getTitle()} id=${widget.node.getID()}",
+        );
       },
       onLongPressDown: (details) {
         widget.node._doubleTapForTextField = false;
         widget.node.getMindMap()?.setSelectedNode(widget.node);
       },
       onDoubleTap: () {
+        debugPrint(
+          "[mind_map_node] onDoubleTap hit node=${widget.node.getTitle()} id=${widget.node.getID()}",
+        );
         if (!(widget.node.getMindMap()?.getReadOnly() ?? false)) {
           widget.node.getMindMap()?.setSelectedNode(widget.node);
           widget.node.getMindMap()?.onDoubleTap(widget.node);

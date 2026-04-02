@@ -12,6 +12,12 @@ class MultiRootPage extends StatefulWidget {
 }
 
 class _MultiRootPageState extends State<MultiRootPage> {
+  bool _canMoveMap = true;
+  bool _canMoveRoots = true;
+  int _doubleTapCount = 0;
+  int _mapTapCount = 0;
+  int _pointerDownCount = 0;
+
   @override
   void initState() {
     super.initState();
@@ -25,6 +31,19 @@ class _MultiRootPageState extends State<MultiRootPage> {
       widget.mindMap.removeRootNode(node);
     }
 
+    widget.mindMap.addOnDoubleTapListeners((node) {
+      setState(() {
+        _doubleTapCount++;
+      });
+      debugPrint("双击节点: title=${node.getTitle()}, id=${node.getID()}");
+    });
+    widget.mindMap.addOnTapListeners(() {
+      setState(() {
+        _mapTapCount++;
+      });
+      debugPrint("[multi_root_page] mindMap onTap");
+    });
+
     // 2. 创建第一个根节点 (Root 1) 及子树
     MindMapNode root1 = MindMapNode()
       ..setTitle("核心概念")
@@ -35,9 +54,9 @@ class _MultiRootPageState extends State<MultiRootPage> {
     root1.addRightItem(child1_Right);
 
     MindMapNode child1_Left = MindMapNode()..setTitle("分支 A2");
-    root1.addLeftItem(child1_Left);
+    root1.addRightItem(child1_Left);
 
-    widget.mindMap.addRootNode(root1, canvasOffset: const Offset(-200, -100));
+    widget.mindMap.addRootNode(root1, canvasOffset: const Offset(300, 200));
 
     // 3. 创建第二个根节点 (Root 2) 及子树
     MindMapNode root2 = MindMapNode()
@@ -55,7 +74,8 @@ class _MultiRootPageState extends State<MultiRootPage> {
 
     // 4. 配置 MindMap 组件的一些常用交互属性
     widget.mindMap.setZoom(1.0);
-    widget.mindMap.setCanMove(true);
+    widget.mindMap.setCanMove(_canMoveMap);
+    widget.mindMap.setCanMoveRootNodes(_canMoveRoots);
     widget.mindMap.setHasTextField(false);
     widget.mindMap.setHasEditButton(true);
     widget.mindMap.setShowRecycle(false);
@@ -63,6 +83,72 @@ class _MultiRootPageState extends State<MultiRootPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(color: Colors.white, child: widget.mindMap);
+    return Scaffold(
+      body: Column(
+        children: [
+          Material(
+            color: Colors.grey.shade100,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Wrap(
+                spacing: 16,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text("画布可移动"),
+                      Switch(
+                        value: _canMoveMap,
+                        onChanged: (v) {
+                          setState(() {
+                            _canMoveMap = v;
+                          });
+                          widget.mindMap.setCanMove(v);
+                          debugPrint("测试开关: setCanMove($v)");
+                        },
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text("根节点可拖拽"),
+                      Switch(
+                        value: _canMoveRoots,
+                        onChanged: (v) {
+                          setState(() {
+                            _canMoveRoots = v;
+                          });
+                          widget.mindMap.setCanMoveRootNodes(v);
+                          debugPrint("测试开关: setCanMoveRootNodes($v)");
+                        },
+                      ),
+                    ],
+                  ),
+                  Text("doubleTap触发次数: $_doubleTapCount"),
+                  Text("map onTap触发次数: $_mapTapCount"),
+                  Text("pointerDown次数: $_pointerDownCount"),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Listener(
+              onPointerDown: (event) {
+                setState(() {
+                  _pointerDownCount++;
+                });
+                debugPrint(
+                  "[multi_root_page] pointerDown local=${event.localPosition}",
+                );
+              },
+              child: Container(color: Colors.white, child: widget.mindMap),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -936,6 +936,9 @@ class MindMap extends StatefulWidget {
 
   ///On Double Tap
   void onDoubleTap(IMindMapNode node) {
+    debugPrint(
+      "[mind_map] dispatch onDoubleTap node=${node.getTitle()} id=${node.getID()} listeners=${_onDoubleTapListeners.length}",
+    );
     List<Function(IMindMapNode)> list = [];
     list.addAll(_onDoubleTapListeners);
     for (Function(IMindMapNode) call in list) {
@@ -1254,6 +1257,59 @@ class MindMap extends StatefulWidget {
 }
 
 class MindMapState extends State<MindMap> {
+  IMindMapNode? _hitTestNodeFromLocalPosition(Offset localPosition) {
+    final RenderObject? mapRenderObject = widget._key.currentContext?.findRenderObject();
+    if (mapRenderObject is! RenderBox) return null;
+
+    // localPosition is in _mapStackKey Container space.
+    // ro.localToGlobal(ancestor: mapRenderBox) returns RepaintBoundary space.
+    // Convert localPosition to the same space so comparisons are valid.
+    final RenderBox? stackBox =
+        _mapStackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (stackBox == null) return null;
+    final Offset globalPos = stackBox.localToGlobal(localPosition);
+    final Offset posInMap = mapRenderObject.globalToLocal(globalPos);
+
+    final List<IMindMapNode> roots = widget.getRootNodes();
+    for (int i = roots.length - 1; i >= 0; i--) {
+      final IMindMapNode? hit = _hitTestNodeRecursive(
+        roots[i],
+        mapRenderObject,
+        posInMap,
+      );
+      if (hit != null) return hit;
+    }
+    return null;
+  }
+
+  IMindMapNode? _hitTestNodeRecursive(
+    IMindMapNode node,
+    RenderBox mapRenderBox,
+    Offset localPosition,
+  ) {
+    final List<IMindMapNode> children = [
+      ...node.getLeftItems(),
+      ...node.getRightItems(),
+    ];
+    for (int i = children.length - 1; i >= 0; i--) {
+      final IMindMapNode? childHit = _hitTestNodeRecursive(
+        children[i],
+        mapRenderBox,
+        localPosition,
+      );
+      if (childHit != null) return childHit;
+    }
+
+    final RenderObject? ro = node.getRenderObject();
+    if (ro is! RenderBox) return null;
+    final Offset topLeft = ro.localToGlobal(Offset.zero, ancestor: mapRenderBox);
+    final Rect rect = topLeft & ro.size;
+    if (rect.contains(localPosition)) {
+      return node;
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1331,7 +1387,12 @@ class MindMapState extends State<MindMap> {
     if (s.isEmpty) {
       s = MediaQuery.of(context).size;
     }
-    if (widget.getOffset() == null &&
+    // Multi-root mode: place canvas origin (0,0) at screen center so every
+    // root tree is positioned relative to the center via its canvasOffset.
+    if (widget.getOffset() == null && widget.getRootNodes().length > 1) {
+      x = s.width / 2;
+      y = s.height / 2;
+    } else if (widget.getOffset() == null &&
         size != null &&
         size.width > 0 &&
         size.height > 0) {
@@ -1471,46 +1532,57 @@ class MindMapState extends State<MindMap> {
       width: double.infinity,
       height: double.infinity,
       child: GestureDetector(
-        onTap: () {
-          widget.setIsScaling(false);
-          widget.setSelectedNode(null);
-          widget.onTap();
+        // NOTE:
+        // Keep map-level tap disabled to avoid competing with node-level
+        // tap/double-tap recognizers in multi-root scenes.
+        onTap: null,
+        onDoubleTapDown: (details) {
+          if (widget.getReadOnly()) return;
+          final IMindMapNode? node = _hitTestNodeFromLocalPosition(
+            details.localPosition,
+          );
+          if (node != null) {
+            widget.setSelectedNode(node);
+            widget.onDoubleTap(node);
+          }
         },
 
         ///Scale
-        onScaleStart: (details) {
-          if (widget.getCanMove()) {
-            widget.setIsScaling(true);
-            setState(() {
-              _oldzoom = widget.getZoom();
-              widget._dragInNode = null;
-              widget._dragNode = null;
-              _focalPoint = widget.getMoveOffset();
-              _lastFocalPoint = details.focalPoint;
-              _lastScale = widget.getZoom();
-            });
-          }
-        },
-        onScaleUpdate: (details) {
-          if (widget.getCanMove()) {
-            setState(() {
-              double scale = _lastScale * details.scale;
-              widget.setZoom(scale < 0.1 ? 0.1 : scale);
-              widget.setMoveOffset(
-                Offset(
-                  _focalPoint.dx + details.focalPoint.dx - _lastFocalPoint.dx,
-                  _focalPoint.dy + details.focalPoint.dy - _lastFocalPoint.dy,
-                ),
-              );
-            });
-          }
-        },
-        onScaleEnd: (details) {
-          widget.setIsScaling(false);
-          if (_oldzoom != widget.getZoom()) {
-            widget.onChanged();
-          }
-        },
+        onScaleStart: widget.getCanMove()
+            ? (details) {
+                widget.setIsScaling(true);
+                setState(() {
+                  _oldzoom = widget.getZoom();
+                  widget._dragInNode = null;
+                  widget._dragNode = null;
+                  _focalPoint = widget.getMoveOffset();
+                  _lastFocalPoint = details.focalPoint;
+                  _lastScale = widget.getZoom();
+                });
+              }
+            : null,
+        onScaleUpdate: widget.getCanMove()
+            ? (details) {
+                setState(() {
+                  double scale = _lastScale * details.scale;
+                  widget.setZoom(scale < 0.1 ? 0.1 : scale);
+                  widget.setMoveOffset(
+                    Offset(
+                      _focalPoint.dx + details.focalPoint.dx - _lastFocalPoint.dx,
+                      _focalPoint.dy + details.focalPoint.dy - _lastFocalPoint.dy,
+                    ),
+                  );
+                });
+              }
+            : null,
+        onScaleEnd: widget.getCanMove()
+            ? (details) {
+                widget.setIsScaling(false);
+                if (_oldzoom != widget.getZoom()) {
+                  widget.onChanged();
+                }
+              }
+            : null,
         child: DragTarget(
           key: _pkey,
           builder: (context, candidateData, rejectedData) {
@@ -1521,48 +1593,65 @@ class MindMapState extends State<MindMap> {
               height: double.infinity,
               child: Stack(
                 children: [
-                  Positioned(
-                    left:
+                  Positioned.fill(
+                    child: Transform.translate(
+                      offset: Offset(
                         x +
-                        widget.getMoveOffset().dx -
-                        widget.getMindMapPadding() * widget.getZoom(),
-                    top:
+                            widget.getMoveOffset().dx -
+                            widget.getMindMapPadding() * widget.getZoom(),
                         y +
-                        widget.getMoveOffset().dy -
-                        widget.getMindMapPadding() * widget.getZoom(),
-                    child: Transform.scale(
-                      scale: widget.getZoom(),
-                      child: RepaintBoundary(
-                        key: widget._key,
-                        child: Container(
-                          color: widget.getBackgroundColor(),
-                          child: CustomPaint(
-                            painter: widget.getMapType() == MapType.mind
-                                ? MindMapPainter(mindMap: widget)
-                                : FishbonePainter(mindMap: widget),
-                            child: Container(
-                              padding: EdgeInsets.all(
-                                widget.getMapType() == MapType.mind
-                                    ? widget.getMindMapPadding() *
-                                          widget.getZoom()
-                                    : 0,
-                              ),
-                              child: Stack(
-                                      clipBehavior: Clip.none,
-                                      children: widget.getRootNodes().map((rootNode) {
-                                        return _DraggableRootNode(
-                                          key: ValueKey('drag_root_${rootNode.getID()}'),
-                                          rootNode: rootNode,
-                                          mindMap: widget,
-                                        );
-                                      }).toList(),
-                                    ),
+                            widget.getMoveOffset().dy -
+                            widget.getMindMapPadding() * widget.getZoom(),
+                      ),
+                      child: Transform.scale(
+                        scale: widget.getZoom(),
+                        alignment: Alignment.topLeft,
+                        child: RepaintBoundary(
+                          key: widget._key,
+                          child: Container(
+                            color: widget.getBackgroundColor(),
+                            // Separate the painter from the node hit-test layer.
+                            // CustomPaint.hitTest rejects positions outside its
+                            // bounds, which blocks root nodes at negative canvas
+                            // offsets. By making CustomPaint a Positioned.fill
+                            // sibling and wrapping both in a Clip.none Stack,
+                            // the node Container is tested independently of the
+                            // painter's bounds.
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Positioned.fill(
+                                  child: CustomPaint(
+                                    painter: widget.getMapType() == MapType.mind
+                                        ? MindMapPainter(mindMap: widget)
+                                        : FishbonePainter(mindMap: widget),
+                                  ),
+                                ),
+                                Container(
+                                  padding: EdgeInsets.all(
+                                    widget.getMapType() == MapType.mind
+                                        ? widget.getMindMapPadding() *
+                                              widget.getZoom()
+                                        : 0,
+                                  ),
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: widget.getRootNodes().map((rootNode) {
+                                      return _DraggableRootNode(
+                                        key: ValueKey('drag_root_${rootNode.getID()}'),
+                                        rootNode: rootNode,
+                                        mindMap: widget,
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  ),
+                      ),   // closes Transform.scale
+                    ),     // closes Transform.translate
+                  ),       // closes Positioned.fill
 
                   widget.getWatermark().isEmpty
                       ? Container()
@@ -2809,9 +2898,18 @@ class _DraggableRootNodeState extends State<_DraggableRootNode> {
   @override
   Widget build(BuildContext context) {
     final canMove = widget.mindMap.getCanMoveRootNodes();
-    return Transform.translate(
-      offset: _visualOffset,
-      child: GestureDetector(
+    return Positioned(
+      left: _visualOffset.dx,
+      top: _visualOffset.dy,
+      // ClipRect is critical for correct multi-root hit testing.
+      // The inner node widget uses HitTestBehavior.opaque, whose hitTestSelf
+      // returns true for ANY position. Without ClipRect, the last root node
+      // in the Stack (tested first due to reverse iteration) would capture
+      // every touch globally. ClipRect.hitTest() explicitly checks
+      // size.contains(position) and returns false when outside the node's
+      // bounds, allowing touches on other root nodes to reach them correctly.
+      child: ClipRect(
+        child: GestureDetector(
         behavior: HitTestBehavior.deferToChild,
         onPanStart: canMove
             ? (details) {
@@ -2851,7 +2949,8 @@ class _DraggableRootNodeState extends State<_DraggableRootNode> {
               }
             : null,
         child: widget.rootNode as Widget,
-      ),
-    );
+      ),         // closes GestureDetector
+      ),         // closes ClipRect
+    );           // closes Positioned
   }
 }

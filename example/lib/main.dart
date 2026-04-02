@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_mind_map_example/example_home_page.dart';
 
 void main() {
+  // 勿默认开启：会为每个布局画上彩色/虚线「框」，容易误以为只有框、内容没了。
+  // 需要时在本机临时改为 true，或 DevTools 里开「Debug paint」。
+  debugPaintSizeEnabled = true;
+
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const ExampleApp());
 }
