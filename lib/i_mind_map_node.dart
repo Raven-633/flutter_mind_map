@@ -29,7 +29,7 @@ abstract class IMindMapNode {
   void setLinkWidth(double value);
 
   IMindMapNode? getParentNode();
-  void setParentNode(IMindMapNode parentNode);
+  void setParentNode(IMindMapNode? parentNode);
   int getHSpace();
   int getVSpace();
 

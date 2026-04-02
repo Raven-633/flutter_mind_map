@@ -887,7 +887,7 @@ class MindMapNode extends StatefulWidget implements IMindMapNode {
 
   /// set parent node
   @override
-  void setParentNode(IMindMapNode value) {
+  void setParentNode(IMindMapNode? value) {
     _parentNode = value;
   }
 

@@ -1087,11 +1087,34 @@ class MindMap extends StatefulWidget {
   ///Add a root node at the given canvas offset
   void addRootNode(IMindMapNode node, {Offset canvasOffset = Offset.zero}) {
     _rootNodes.add(node);
+    node.setParentNode(null);
     node.setNodeType(NodeType.root);
     node.setMindMap(this);
     _rootNodeCanvasOffsets[node.getID()] = canvasOffset;
     onRootNodeChanged();
     onChanged();
+  }
+
+  ///Detach a node from its parent and promote it to an independent root node.
+  ///
+  /// Returns true when a promotion happens; false when node is null/already root.
+  bool promoteNodeToRoot(
+    IMindMapNode? node, {
+    Offset canvasOffset = Offset.zero,
+  }) {
+    if (node == null) return false;
+    if (node.getParentNode() == null || node.getNodeType() == NodeType.root) {
+      return false;
+    }
+
+    final IMindMapNode? parent = node.getParentNode();
+    if (parent == null) return false;
+
+    parent.removeLeftItem(node);
+    parent.removeRightItem(node);
+    node.setParentNode(null);
+    addRootNode(node, canvasOffset: canvasOffset);
+    return true;
   }
 
   ///Remove a root node (and its subtree)

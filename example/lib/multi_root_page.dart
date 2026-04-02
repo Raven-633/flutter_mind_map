@@ -18,6 +18,37 @@ class _MultiRootPageState extends State<MultiRootPage> {
   int _mapTapCount = 0;
   int _pointerDownCount = 0;
 
+  void _promoteSampleNodeToRoot() {
+    final List<IMindMapNode> roots = widget.mindMap.getRootNodes();
+    if (roots.isEmpty) {
+      return;
+    }
+
+    final IMindMapNode sourceRoot = roots.first;
+    final List<IMindMapNode> candidates = [
+      ...sourceRoot.getRightItems(),
+      ...sourceRoot.getLeftItems(),
+    ];
+    if (candidates.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("没有可提升的子节点")));
+      return;
+    }
+
+    final IMindMapNode targetNode = candidates.first;
+    final Offset sourceOffset = widget.mindMap.getRootNodeCanvasOffset(sourceRoot);
+    final bool ok = widget.mindMap.promoteNodeToRoot(
+      targetNode,
+      canvasOffset: sourceOffset + const Offset(260, 0),
+    );
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("已提升为根节点: ${targetNode.getTitle()}")),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -130,6 +161,10 @@ class _MultiRootPageState extends State<MultiRootPage> {
                   Text("doubleTap触发次数: $_doubleTapCount"),
                   Text("map onTap触发次数: $_mapTapCount"),
                   Text("pointerDown次数: $_pointerDownCount"),
+                  ElevatedButton(
+                    onPressed: _promoteSampleNodeToRoot,
+                    child: const Text("示例: 子节点提升为根节点"),
+                  ),
                 ],
               ),
             ),
