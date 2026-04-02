@@ -14,6 +14,7 @@ class MultiRootPage extends StatefulWidget {
 class _MultiRootPageState extends State<MultiRootPage> {
   bool _canMoveMap = true;
   bool _canMoveRoots = true;
+  bool _enableNodeReparentOnDrag = true;
   int _doubleTapCount = 0;
   int _mapTapCount = 0;
   int _pointerDownCount = 0;
@@ -107,6 +108,7 @@ class _MultiRootPageState extends State<MultiRootPage> {
     widget.mindMap.setZoom(1.0);
     widget.mindMap.setCanMove(_canMoveMap);
     widget.mindMap.setCanMoveRootNodes(_canMoveRoots);
+    widget.mindMap.setEnableNodeReparentOnDrag(_enableNodeReparentOnDrag);
     widget.mindMap.setHasTextField(false);
     widget.mindMap.setHasEditButton(true);
     widget.mindMap.setShowRecycle(false);
@@ -154,6 +156,22 @@ class _MultiRootPageState extends State<MultiRootPage> {
                           });
                           widget.mindMap.setCanMoveRootNodes(v);
                           debugPrint("测试开关: setCanMoveRootNodes($v)");
+                        },
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text("拖拽可改父子"),
+                      Switch(
+                        value: _enableNodeReparentOnDrag,
+                        onChanged: (v) {
+                          setState(() {
+                            _enableNodeReparentOnDrag = v;
+                          });
+                          widget.mindMap.setEnableNodeReparentOnDrag(v);
+                          debugPrint("测试开关: setEnableNodeReparentOnDrag($v)");
                         },
                       ),
                     ],

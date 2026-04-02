@@ -736,6 +736,26 @@ class MindMap extends StatefulWidget {
     }
   }
 
+  bool _enableNodeReparentOnDrag = true;
+
+  /// Whether dragging nodes can change parent/position by dropping on targets.
+  ///
+  /// When disabled, drag prompt line and drop-to-reparent behavior are turned off.
+  bool getEnableNodeReparentOnDrag() => _enableNodeReparentOnDrag;
+
+  /// Set whether dragging nodes can change parent/position by dropping on targets.
+  void setEnableNodeReparentOnDrag(bool value) {
+    if (_enableNodeReparentOnDrag != value) {
+      _enableNodeReparentOnDrag = value;
+      if (!value) {
+        _dragInNode = null;
+        _dragNode = null;
+        _dragOffset = null;
+      }
+      _state?.refresh();
+    }
+  }
+
   bool _showZoom = true;
 
   ///Show Zoom
@@ -2036,7 +2056,8 @@ class MindMapState extends State<MindMap> {
             );
           },
           onWillAcceptWithDetails: (details) {
-            if (!widget.getIsScaling()) {
+            if (!widget.getIsScaling() &&
+                widget.getEnableNodeReparentOnDrag()) {
               switch (widget.getMapType()) {
                 case MapType.mind:
                   if (details.data is IMindMapNode) {
@@ -2057,7 +2078,8 @@ class MindMapState extends State<MindMap> {
             return false;
           },
           onAcceptWithDetails: (details) {
-            if (!widget.getIsScaling()) {
+            if (!widget.getIsScaling() &&
+                widget.getEnableNodeReparentOnDrag()) {
               switch (widget.getMapType()) {
                 case MapType.mind:
                   if (details.data is IMindMapNode) {
@@ -2109,7 +2131,8 @@ class MindMapState extends State<MindMap> {
             });
           },
           onMove: (details) {
-            if (!widget.getIsScaling()) {
+            if (!widget.getIsScaling() &&
+                widget.getEnableNodeReparentOnDrag()) {
               if (details.data is IMindMapNode) {
                 widget._dragInNode = details.data as IMindMapNode;
                 Size dataSize =
@@ -2354,7 +2377,9 @@ class MindMapPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeWidth = mindMap.getDragInBorderWidth()
       ..color = mindMap.getDragInBorderColor();
-    if (mindMap._dragInNode != null && !mindMap.getIsScaling()) {
+    if (mindMap.getEnableNodeReparentOnDrag() &&
+        mindMap._dragInNode != null &&
+        !mindMap.getIsScaling()) {
       ///canvas.drawLine(Offset.zero, Offset(size.width, size.height), paint);
       RenderObject? ro = mindMap._dragInNode!.getRenderObject();
       if (ro != null && mindMap._renderObject != null) {
@@ -2941,7 +2966,9 @@ class _DraggableRootNodeState extends State<_DraggableRootNode> {
   }
 
   void _updateDropHint(Offset globalPointer) {
-    if (!widget.mindMap.getCanMoveRootNodes() || widget.mindMap.getIsScaling()) {
+    if (!widget.mindMap.getCanMoveRootNodes() ||
+        !widget.mindMap.getEnableNodeReparentOnDrag() ||
+        widget.mindMap.getIsScaling()) {
       _clearDropHint();
       return;
     }

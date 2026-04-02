@@ -5023,6 +5023,10 @@ class FishboneNodeDragState extends State<FishboneNodeDrag> {
         ),
         child: DragTarget(
           onWillAcceptWithDetails: (details) {
+            if (!(widget.node.getMindMap()?.getEnableNodeReparentOnDrag() ??
+                true)) {
+              return false;
+            }
             if (details.data is IMindMapNode) {
               if (details.data == widget.node) {
                 return false;
@@ -5038,6 +5042,10 @@ class FishboneNodeDragState extends State<FishboneNodeDrag> {
             return false;
           },
           onAcceptWithDetails: (details) {
+            if (!(widget.node.getMindMap()?.getEnableNodeReparentOnDrag() ??
+                true)) {
+              return;
+            }
             setState(() {
               isDragging = false;
             });
