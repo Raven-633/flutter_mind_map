@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_mind_map_example/canvas/canvas_demo_list_page.dart';
 import 'package:flutter_mind_map_example/draggable/draggable_example.dart';
 import 'package:flutter_mind_map_example/mind_map_demo_page.dart';
+import 'package:flutter_mind_map_example/multi_root_mind_map_only_page.dart';
 
 /// 示例应用入口：选择 Mind Map 综合演示或进入 Canvas 学习列表。
 class ExampleHomePage extends StatelessWidget {
@@ -32,6 +33,21 @@ class ExampleHomePage extends StatelessWidget {
                 MaterialPageRoute<void>(
                   builder: (_) => const MindMapDemoPage(),
                   settings: const RouteSettings(name: '/mind-map-demo'),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          _SectionCard(
+            icon: Icons.device_hub_outlined,
+            title: '多根思维导图',
+            subtitle: '仅思维导图（Mind），全屏画布、无鱼骨图',
+            onTap: () {
+              Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => const MultiRootMindMapOnlyPage(),
+                  settings:
+                      const RouteSettings(name: '/multi-root-mind-map-only'),
                 ),
               );
             },
