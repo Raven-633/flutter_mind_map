@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show min, max;
 
 import 'package:flutter/material.dart';
 
@@ -216,6 +217,53 @@ class _MultiCardCanvasState extends State<MultiCardCanvas> {
     }
   }
 
+  // ── 适应所有卡片 ────────────────────────────────────────────────────────────
+
+  void _fitAllCards() {
+    if (_cards.isEmpty) return;
+
+    // 计算所有卡片的边界框
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+    for (final card in _cards) {
+      minX = min(minX, card.offset.dx);
+      minY = min(minY, card.offset.dy);
+      maxX = max(maxX, card.offset.dx + card.width);
+      maxY = max(maxY, card.offset.dy + card.height);
+    }
+
+    const padding = 48.0;
+    final boundsW = maxX - minX + padding * 2;
+    final boundsH = maxY - minY + padding * 2;
+
+    // 获取视口尺寸
+    final renderBox =
+        _viewerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final viewportSize = renderBox.size;
+
+    // 计算适合的缩放比例并限制在允许范围内
+    final scale = min(
+      viewportSize.width / boundsW,
+      viewportSize.height / boundsH,
+    ).clamp(0.2, 4.0);
+
+    // 计算让边界框居中的平移量
+    final tx =
+        (viewportSize.width - boundsW * scale) / 2 - (minX - padding) * scale;
+    final ty =
+        (viewportSize.height - boundsH * scale) / 2 -
+        (minY - padding) * scale;
+
+    final newMatrix = Matrix4.identity()
+      ..translateByDouble(tx, ty, 0, 1)
+      ..scaleByDouble(scale, scale, 1, 1);
+
+    setState(() {
+      _transformController.value = newMatrix;
+    });
+  }
+
   // ── 构建 ────────────────────────────────────────────────────────────────────
 
   @override
@@ -227,11 +275,26 @@ class _MultiCardCanvasState extends State<MultiCardCanvas> {
           width: double.infinity,
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(
-            '滚轮 / 双指捏合 → 以鼠标为中心缩放    长按卡片（0.5s）→ 拖动',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '滚轮 / 双指捏合 → 以鼠标为中心缩放    长按卡片（0.5s）→ 拖动',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Tooltip(
+                message: '缩放到适合所有卡片',
+                child: IconButton(
+                  onPressed: _fitAllCards,
+                  icon: const Icon(Icons.fit_screen),
+                  iconSize: 20,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
           ),
         ),
         // 画布区域
