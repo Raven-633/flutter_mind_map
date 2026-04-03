@@ -1409,7 +1409,8 @@ class MindMapState extends State<MindMap> {
   }
 
   void applyWheelZoomAtLocal(Offset local, double scrollDeltaDy) {
-    if (!widget.getCanMove() || scrollDeltaDy == 0) return;
+    // 与画布拖移手势解耦：选择模式下仍允许滚轮缩放（getCanMove 仅约束 onScale 平移/捏合）。
+    if (scrollDeltaDy == 0) return;
     final oldZoom = widget.getZoom();
     final newZoom = (oldZoom - scrollDeltaDy * 0.002).clamp(0.1, 2.0);
     if ((newZoom - oldZoom).abs() < 1e-9) return;
